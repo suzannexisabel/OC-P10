@@ -1,0 +1,19 @@
+# Secrets
+.env
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# macOS
+.DS_Store
+
+# Tests
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
