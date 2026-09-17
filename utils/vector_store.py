@@ -9,6 +9,8 @@ from mistralai.client import MistralClient
 from mistralai.exceptions import MistralAPIException
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document # Utilisé pour le format attendu par le splitter
+from pydantic import ValidationError
+from .schemas import DocumentChunk
 
 from .config import (
     MISTRAL_API_KEY, EMBEDDING_MODEL, EMBEDDING_BATCH_SIZE,
@@ -72,7 +74,23 @@ class VectorStoreManager:
                         "start_index": chunk.metadata.get("start_index", -1) # Position de début (en caractères)
                     }
                 }
-                all_chunks.append(chunk_dict)
+
+                try:
+                    validated_chunk = DocumentChunk.model_validate(
+                        chunk_dict
+                    )
+
+                    all_chunks.append(validated_chunk.model_dump())
+
+                except ValidationError as error:
+                    logging.error(
+                        "Chunk invalide ignoré pour le document %s : %s",
+                        doc["metadata"].get(
+                            "filename",
+                            "inconnu",
+                        ),
+                        error,
+                    )
             doc_counter += 1
 
         logging.info(f"Total de {len(all_chunks)} chunks créés.")
