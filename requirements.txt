@@ -13,3 +13,14 @@ pymupdf>=1.22.0
 pillow>=9.0.0
 easyocr
 tqdm
+
+numpy==2.4.6
+
+# Validation
+pydantic==2.13.5
+
+# Évaluation RAG
+ragas==0.2.15
+langchain-community==0.3.21
+langchain-openai==0.3.14
+openai==1.109.1

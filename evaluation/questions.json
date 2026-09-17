@@ -1,0 +1,50 @@
+[
+  {
+    "id": "text_simple_01",
+    "category": "text_simple",
+    "question": "Quels sont les trois joueurs les plus souvent mentionnés dans les commentaires ?",
+    "reference_answer": "Les trois joueurs les plus souvent mentionnés dans les commentaires sont Reggie Miller, Stephen Curry et Dwyane Wade, dans cet ordre."
+  },
+  {
+    "id": "text_complex_01",
+    "category": "text_complex",
+    "question": "Quels sont les principaux sujets de débat dans les commentaires des supporters ?",
+    "reference_answer": "Les principaux débats portent sur les équipes et joueurs les plus impressionnants des playoffs, l'intérêt médiatique et les audiences d'une finale entre équipes de petits marchés, l'efficacité et la place historique de Reggie Miller, ainsi que l'avantage du terrain, le classement des équipes et le système de play-in."
+  },
+  {
+    "id": "numeric_simple_01",
+    "category": "numeric_simple",
+    "question": "Quels joueurs possèdent le meilleur pourcentage de réussite à trois points ?",
+    "reference_answer": "Alondes Williams et Skal Labissiere possèdent le meilleur pourcentage de réussite à trois points avec 100 %, chacun ayant réussi son unique tentative."
+  },
+  {
+  "id": "numeric_complex_01",
+  "category": "numeric_complex",
+  "question": "Parmi les joueurs ayant tenté au moins 100 tirs à trois points, lequel possède le meilleur pourcentage de réussite ?",
+  "reference_answer": "Seth Curry possède le meilleur pourcentage de réussite parmi les joueurs ayant tenté au moins 100 tirs à trois points, avec 45,6 % sur 184 tentatives."
+  },
+  {
+  "id": "numeric_complex_02",
+  "category": "numeric_complex",
+  "question": "Quels sont les cinq joueurs ayant marqué le plus de points, classés du premier au cinquième ?",
+  "reference_answer": "Les cinq joueurs ayant marqué le plus de points sont Shai Gilgeous-Alexander avec 2 485 points, Anthony Edwards avec 2 180 points, Nikola Jokić avec 2 072 points, Giannis Antetokounmpo avec 2 037 points et Jayson Tatum avec 1 930 points, dans cet ordre."
+  },
+  {
+  "id": "comparison_01",
+  "category": "comparison",
+  "question": "Compare le nombre total de rebonds de Shai Gilgeous-Alexander et d’Anthony Edwards.",
+  "reference_answer": "Shai Gilgeous-Alexander totalise 380 rebonds, contre 450 pour Anthony Edwards. Anthony Edwards a donc capté 70 rebonds de plus."
+  },
+  {
+  "id": "robustness_noisy_01",
+  "category": "robustness_noisy",
+  "question": "c ki les joueur ki on le meilleur pourcentaj a 3 points ?",
+  "reference_answer": "Alondes Williams et Skal Labissiere possèdent le meilleur pourcentage de réussite à trois points avec 100 %, chacun sur une seule tentative."
+  },
+  {
+  "id": "out_of_scope_01",
+  "category": "out_of_scope",
+  "question": "Quel temps fera-t-il demain à Toulouse ?",
+  "reference_answer": "Je ne dispose pas de données météorologiques permettant de répondre à cette question."
+  }
+]
