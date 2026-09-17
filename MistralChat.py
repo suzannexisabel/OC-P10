@@ -6,6 +6,9 @@ from mistralai.client import MistralClient
 from mistralai.models.chat_completion import ChatMessage
 from dotenv import load_dotenv
 
+from pydantic import ValidationError
+from utils.schemas import RAGRequest, RAGResponse
+
 # --- Importations depuis vos modules ---
 try:
     from utils.config import (
@@ -123,6 +126,13 @@ def executer_rag(
     et retourne la réponse et les contextes.
     """
 
+    #Valider la question reçue
+    validated_request = RAGRequest(
+        question=question
+    )
+
+    question = validated_request.question
+
     # Vérifier si le Vector Store est disponible
     if vector_store_manager is None:
         st.error(
@@ -215,7 +225,15 @@ def executer_rag(
         messages_for_api
     )
 
-    return response_content, retrieved_contexts
+    # Valider la reponse et les contextes
+    validated_response = RAGResponse(
+        answer=response_content,
+        retrieved_contexts=retrieved_contexts,
+    )
+
+    return (validated_response.answer,
+            validated_response.retrieved_contexts,
+    )
 
 # --- Interface Utilisateur Streamlit ---
 st.title(APP_TITLE)

@@ -1,7 +1,7 @@
 """Schémas Pydantic utilisés pour valider les données du pipeline RAG."""
 
 from typing import Any
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class DocumentMetadata(BaseModel):
@@ -60,9 +60,37 @@ class RAGRequest(BaseModel):
 
     question: str = Field(min_length=1)
 
+    @field_validator("question")
+    @classmethod
+    def validate_question(cls, value: str) -> str:
+        """Refuse une question vide ou composée d'espaces."""
+
+        cleaned_value = value.strip()
+
+        if not cleaned_value:
+            raise ValueError(
+                "La question ne peut pas être vide."
+            )
+
+        return cleaned_value
+
 
 class RAGResponse(BaseModel):
     """Réponse renvoyée par le pipeline RAG."""
 
     answer: str = Field(min_length=1)
     retrieved_contexts: list[str]
+
+    @field_validator("answer")
+    @classmethod
+    def validate_answer(cls, value: str) -> str:
+        """Refuse une réponse vide ou composée d'espaces."""
+
+        cleaned_value = value.strip()
+
+        if not cleaned_value:
+            raise ValueError(
+                "La réponse ne peut pas être vide."
+            )
+
+        return cleaned_value
