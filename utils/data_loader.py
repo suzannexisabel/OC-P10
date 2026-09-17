@@ -8,6 +8,8 @@ from typing import List, Dict, Optional, Union
 import logging
 import numpy as np
 from tqdm import tqdm # Ajout de tqdm
+from pydantic import ValidationError
+from .schemas import SourceDocument
 
 # --- Importations pour OCR ---
 try:
@@ -251,26 +253,50 @@ def load_and_parse_files(input_dir: str) -> List[Dict[str, any]]:
             # Si c'est un dictionnaire (plusieurs feuilles Excel), créer un doc par feuille
             if isinstance(extracted_content, dict):
                 for sheet_name, text in extracted_content.items():
-                    documents.append({
-                        "page_content": text,
-                        "metadata": {
-                            "source": f"{str(relative_path)} (Feuille: {sheet_name})",
-                            "filename": file_path.name,
-                            "sheet": sheet_name,
-                            "category": source_folder,
-                            "full_path": str(file_path.resolve())
-                        }
-                    })
+                    try:
+                        document = SourceDocument(
+                            page_content=text,
+                            metadata={
+                                "source": (
+                                    f"{relative_path} "
+                                    f"(Feuille: {sheet_name})"
+                                ),
+                                "filename": file_path.name,
+                                "sheet": sheet_name,
+                                "category": source_folder,
+                                "full_path": str(file_path.resolve())
+                            }
+                        )
+
+                        documents.append(document.model_dump())
+
+                    except ValidationError as error:
+                        logging.error(
+                            "Document invalide ignoré : %s, feuille %s. %s",
+                            relative_path,
+                            sheet_name,
+                            error,
+                        )
             else: # Pour tous les autres types de fichiers
-                 documents.append({
-                    "page_content": extracted_content,
-                    "metadata": {
-                        "source": str(relative_path),
-                        "filename": file_path.name,
-                        "category": source_folder,
-                        "full_path": str(file_path.resolve())
-                    }
-                })
+                try:
+                    document = SourceDocument(
+                        page_content=extracted_content,
+                        metadata={
+                            "source": str(relative_path),
+                            "filename": file_path.name,
+                            "category": source_folder,
+                            "full_path": str(file_path.resolve()),
+                        },
+                    )
+
+                    documents.append(document.model_dump())
+
+                except ValidationError as error:
+                    logging.error(
+                        "Document invalide ignoré : %s. %s",
+                        relative_path,
+                        error,
+                    )
 
     logging.info(f"{len(documents)} documents chargés et parsés.")
     return documents
