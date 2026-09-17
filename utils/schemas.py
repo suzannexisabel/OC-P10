@@ -34,8 +34,16 @@ class DocumentChunk(BaseModel):
 class SearchResult(BaseModel):
     """Résultat retourné par la recherche FAISS."""
 
-    score: float
-    raw_score: float
+    score: float = Field(
+        ge=-100.001,
+        le=100.001,
+        allow_inf_nan=False,
+    )
+    raw_score: float = Field(
+        ge=-1.00001,
+        le=1.00001,
+        allow_inf_nan=False,
+    )
     text: str = Field(min_length=1)
     metadata: dict[str, Any]
 

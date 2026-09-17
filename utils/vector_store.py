@@ -10,7 +10,7 @@ from mistralai.exceptions import MistralAPIException
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document # Utilisé pour le format attendu par le splitter
 from pydantic import ValidationError
-from .schemas import DocumentChunk
+from .schemas import DocumentChunk, SearchResult
 
 from .config import (
     MISTRAL_API_KEY, EMBEDDING_MODEL, EMBEDDING_BATCH_SIZE,
@@ -274,12 +274,25 @@ class VectorStoreManager:
                             logging.debug(f"Document filtré (score {similarity:.2f}% < minimum {min_score_percent:.2f}%)")
                             continue
 
-                        results.append({
-                            "score": similarity, # Score de similarité en pourcentage
-                            "raw_score": raw_score, # Score brut pour débogage
-                            "text": chunk["text"],
-                            "metadata": chunk["metadata"] # Contient source, category, chunk_id_in_doc, start_index etc.
-                        })
+                        try:
+                            search_result = SearchResult(
+                                score=similarity,
+                                raw_score=raw_score,
+                                text=chunk["text"],
+                                metadata=chunk["metadata"],
+                            )
+
+                            results.append(
+                                search_result.model_dump()
+                            )
+
+                        except ValidationError as error:
+                            logging.error(
+                                "Résultat de recherche invalide ignoré "
+                                "pour le chunk %s : %s",
+                                chunk.get("id", "inconnu"),
+                                error,
+                            )
                     else:
                         logging.warning(f"Index Faiss {idx} hors limites (taille des chunks: {len(self.document_chunks)}).")
 
