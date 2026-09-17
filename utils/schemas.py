@@ -2,7 +2,7 @@
 
 from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-
+import math
 
 class DocumentMetadata(BaseModel):
     """Métadonnées associées à un document extrait."""
@@ -53,6 +53,24 @@ class EmbeddedChunk(BaseModel):
 
     chunk_id: str = Field(min_length=1)
     embedding: list[float] = Field(min_length=1)
+
+    @field_validator("embedding")
+    @classmethod
+    def validate_embedding(
+        cls,
+        value: list[float],
+    ) -> list[float]:
+        """Refuse les valeurs NaN et infinies."""
+
+        if not all(
+            math.isfinite(number)
+            for number in value
+        ):
+            raise ValueError(
+                "L'embedding contient une valeur invalide."
+            )
+
+        return value
 
 
 class RAGRequest(BaseModel):

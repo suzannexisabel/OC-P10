@@ -10,7 +10,7 @@ from mistralai.exceptions import MistralAPIException
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_core.documents import Document # Utilisé pour le format attendu par le splitter
 from pydantic import ValidationError
-from .schemas import DocumentChunk, SearchResult
+from .schemas import DocumentChunk, SearchResult, EmbeddedChunk
 
 from .config import (
     MISTRAL_API_KEY, EMBEDDING_MODEL, EMBEDDING_BATCH_SIZE,
@@ -120,8 +120,40 @@ class VectorStoreManager:
                     model=EMBEDDING_MODEL,
                     input=texts_to_embed
                 )
-                batch_embeddings = [data.embedding for data in response.data]
+                if len(response.data) != len(batch_chunks):
+                    logging.error(
+                        "Le nombre d'embeddings reçu (%s) "
+                        "ne correspond pas au nombre de chunk (%s).",
+                        len(response.data),
+                        len(batch_chunks),
+                    )
+                    return None
+
+                batch_embeddings = []
+
+                for chunk, embedding_data in zip(
+                    batch_chunks,
+                    response.data,
+                ):
+                    validated_embedding = EmbeddedChunk(
+                        chunk_id=chunk["id"],
+                        embedding=embedding_data.embedding
+                    )
+
+                    batch_embeddings.append(
+                        validated_embedding.embedding
+                    )
+
                 all_embeddings.extend(batch_embeddings)
+
+            except ValidationError as error:
+                logging.error(
+                    "Embedding invalide dans le lot %s : %s",
+                    batch_num,
+                    error,
+                )
+                return None
+
             except MistralAPIException as e:
                 logging.error(f"Erreur API Mistral lors de la génération d'embeddings (lot {batch_num}): {e}")
                 logging.error(f"  Détails: Status Code={e.status_code}, Message={e.message}")
@@ -136,19 +168,6 @@ class VectorStoreManager:
                      continue
                 logging.warning(f"Ajout de {num_failed} vecteurs nuls de dimension {dim} pour le lot échoué.")
                 all_embeddings.extend([np.zeros(dim, dtype='float32')] * num_failed)
-
-            except Exception as e:
-                logging.error(f"Erreur inattendue lors de la génération d'embeddings (lot {batch_num}): {e}")
-                # Gérer comme ci-dessus
-                num_failed = len(texts_to_embed)
-                if all_embeddings:
-                    dim = len(all_embeddings[0])
-                else:
-                     logging.error("Impossible de déterminer la dimension des embeddings, saut du lot.")
-                     continue
-                logging.warning(f"Ajout de {num_failed} vecteurs nuls de dimension {dim} pour le lot échoué.")
-                all_embeddings.extend([np.zeros(dim, dtype='float32')] * num_failed)
-
 
         if not all_embeddings:
              logging.error("Aucun embedding n'a pu être généré.")
