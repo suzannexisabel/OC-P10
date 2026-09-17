@@ -115,6 +115,108 @@ def generer_reponse(prompt_messages: list[ChatMessage]) -> str:
         logging.exception("Erreur API Mistral pendant client.chat")
         return "Je suis désolé, une erreur technique m'empêche de répondre. Veuillez réessayer plus tard."
 
+def executer_rag(
+    question: str,
+) -> tuple[str, list[str]]:
+    """
+    Exécute le pipeline RAG utilisé par Streamlit
+    et retourne la réponse et les contextes.
+    """
+
+    # Vérifier si le Vector Store est disponible
+    if vector_store_manager is None:
+        st.error(
+            "Le service de recherche de connaissances "
+            "n'est pas disponible. "
+            "Impossible de traiter votre demande."
+        )
+        logging.error(
+            "VectorStoreManager non disponible "
+            "pour la recherche."
+        )
+        st.stop()
+
+    # Rechercher le contexte dans le Vector Store
+    try:
+        logging.info(
+            f"Recherche de contexte pour la question: "
+            f"'{question}' avec k={SEARCH_K}"
+        )
+
+        search_results = vector_store_manager.search(
+            question,
+            k=SEARCH_K,
+        )
+
+        logging.info(
+            f"{len(search_results)} chunks trouvés "
+            "dans le Vector Store."
+        )
+
+    except Exception as e:
+        st.error(
+            "Une erreur est survenue lors de la "
+            f"recherche d'informations pertinentes: {e}"
+        )
+
+        logging.exception(
+            "Erreur pendant vector_store_manager.search "
+            f"pour la query: {question}"
+        )
+
+        search_results = []
+
+    # Conserver les contextes pour RAGAS
+    retrieved_contexts = [
+        result["text"]
+        for result in search_results
+    ]
+
+    # Formater le contexte pour le prompt LLM
+    context_str = "\n\n---\n\n".join(
+        [
+            (
+                f"Source: "
+                f"{result['metadata'].get('source', 'Inconnue')} "
+                f"(Score: {result['score']:.1f}%)\n"
+                f"Contenu: {result['text']}"
+            )
+            for result in search_results
+        ]
+    )
+
+    if not search_results:
+        context_str = (
+            "Aucune information pertinente trouvée "
+            "dans la base de connaissances "
+            "pour cette question."
+        )
+
+        logging.warning(
+            f"Aucun contexte trouvé pour la query: "
+            f"{question}"
+        )
+
+    # Construire exactement le même prompt
+    final_prompt_for_llm = SYSTEM_PROMPT.format(
+        context_str=context_str,
+        question=question,
+    )
+
+    messages_for_api = [
+        ChatMessage(
+            role="user",
+            content=final_prompt_for_llm,
+        )
+    ]
+
+    # Utiliser la fonction Mistral existante
+    response_content = generer_reponse(
+        messages_for_api
+    )
+
+    return response_content, retrieved_contexts
+
 # --- Interface Utilisateur Streamlit ---
 st.title(APP_TITLE)
 st.caption(f"Assistant virtuel pour {NAME} | Modèle: {model}")
@@ -131,59 +233,23 @@ if prompt := st.chat_input(f"Posez votre question sur la {NAME}..."):
     with st.chat_message("user"):
         st.write(prompt)
 
-    # === Début de la logique RAG ===
-
-    # 2. Vérifier si le Vector Store est disponible
-    if vector_store_manager is None:
-        st.error("Le service de recherche de connaissances n'est pas disponible. Impossible de traiter votre demande.")
-        logging.error("VectorStoreManager non disponible pour la recherche.")
-        # On arrête ici car on ne peut pas faire de RAG
-        st.stop()
-
-    # 3. Rechercher le contexte dans le Vector Store
-    try:
-        logging.info(f"Recherche de contexte pour la question: '{prompt}' avec k={SEARCH_K}")
-        search_results = vector_store_manager.search(prompt, k=SEARCH_K)
-        logging.info(f"{len(search_results)} chunks trouvés dans le Vector Store.")
-    except Exception as e:
-        st.error(f"Une erreur est survenue lors de la recherche d'informations pertinentes: {e}")
-        logging.exception(f"Erreur pendant vector_store_manager.search pour la query: {prompt}")
-        search_results = [] # On continue sans contexte si la recherche échoue
-
-    # 4. Formater le contexte pour le prompt LLM
-    context_str = "\n\n---\n\n".join([
-        f"Source: {res['metadata'].get('source', 'Inconnue')} (Score: {res['score']:.1f}%)\nContenu: {res['text']}"
-        for res in search_results
-    ])
-
-    if not search_results:
-        context_str = "Aucune information pertinente trouvée dans la base de connaissances pour cette question."
-        logging.warning(f"Aucun contexte trouvé pour la query: {prompt}")
-
-    # 5. Construire le prompt final pour l'API Mistral en utilisant le System Prompt RAG
-    final_prompt_for_llm = SYSTEM_PROMPT.format(context_str=context_str, question=prompt)
-
-    # Créer la liste de messages pour l'API (juste le prompt système/utilisateur combiné)
-    messages_for_api = [
-        # On pourrait séparer system et user, mais Mistral gère bien un long message user structuré
-        ChatMessage(role="user", content=final_prompt_for_llm)
-    ]
-
-    # === Fin de la logique RAG ===
+    
 
 
-    # 6. Afficher indicateur + Générer la réponse de l'assistant via LLM
+
+
+    # 2. Afficher indicateur + Générer la réponse de l'assistant via LLM
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
         message_placeholder.text("...") # Indicateur simple
 
         # Génération de la réponse de l'assistant en utilisant le prompt augmenté
-        response_content = generer_reponse(messages_for_api)
+        response_content, _ = executer_rag(prompt)
 
         # Affichage de la réponse complète
         message_placeholder.write(response_content)
 
-    # 7. Ajouter la réponse de l'assistant à l'historique (pour affichage UI)
+    # 3. Ajouter la réponse de l'assistant à l'historique (pour affichage UI)
     st.session_state.messages.append({"role": "assistant", "content": response_content})
 
 # Petit pied de page optionnel
