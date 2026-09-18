@@ -2,6 +2,7 @@
 import streamlit as st
 import os
 import logging
+import logfire
 
 from pydantic_ai import Agent
 from pydantic_ai.models.mistral import MistralModel
@@ -11,6 +12,18 @@ from dotenv import load_dotenv
 
 from pydantic import ValidationError
 from utils.schemas import RAGRequest, RAGResponse
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(module)s - %(message)s",
+)
+
+# --- Configuration de l'observabilité Logfire ---
+logfire.configure(
+    service_name="oc-p10-rag",
+)
+
+logfire.instrument_pydantic_ai()
 
 # --- Importations depuis vos modules ---
 try:
@@ -89,7 +102,7 @@ def get_vector_store_manager():
 
 vector_store_manager = get_vector_store_manager()
 
-# --- Prompt Système pour RAG ---
+# --- Prompt Système pour RAG --- 
 # Adaptez ce prompt selon vos besoins
 SYSTEM_PROMPT = f"""Tu es 'NBA Analyst AI', un assistant expert sur la ligue de basketball NBA.
 Ta mission est de répondre aux questions des fans en animant le débat.
@@ -151,6 +164,9 @@ def generer_reponse(prompt: str) -> str:
             "Veuillez réessayer plus tard."
         )
 
+@logfire.instrument(
+    "Exécution du pipeline RAG",
+)
 def executer_rag(
     question: str,
 ) -> tuple[str, list[str]]:
@@ -160,9 +176,12 @@ def executer_rag(
     """
 
     #Valider la question reçue
-    validated_request = RAGRequest(
-        question=question
-    )
+    with logfire.span(
+        "Validation Pydantic de la question"
+    ):
+        validated_request = RAGRequest(
+            question=question
+        )
 
     question = validated_request.question
 
@@ -186,10 +205,13 @@ def executer_rag(
             f"'{question}' avec k={SEARCH_K}"
         )
 
-        search_results = vector_store_manager.search(
-            question,
-            k=SEARCH_K,
-        )
+        with logfire.span(
+            "Recherche FAISS"
+        ):
+            search_results = vector_store_manager.search(
+                question,
+                k=SEARCH_K,
+            )
 
         logging.info(
             f"{len(search_results)} chunks trouvés "
@@ -241,10 +263,14 @@ def executer_rag(
         )
 
     # Construire exactement le même prompt
-    final_prompt_for_llm = SYSTEM_PROMPT.format(
-        context_str=context_str,
-        question=question,
-    )
+    with logfire.span(
+        "Construction du promt RAG",
+        nombre_chunks=len(search_results)
+    ):
+        final_prompt_for_llm = SYSTEM_PROMPT.format(
+            context_str=context_str,
+            question=question,
+        )
 
     # Utiliser la fonction Mistral existante
     response_content = generer_reponse(
@@ -252,10 +278,13 @@ def executer_rag(
     )
 
     # Valider la reponse et les contextes
-    validated_response = RAGResponse(
-        answer=response_content,
-        retrieved_contexts=retrieved_contexts,
-    )
+    with logfire.span(
+        "Validation Pydantic de la reponse"
+    ):
+        validated_response = RAGResponse(
+            answer=response_content,
+            retrieved_contexts=retrieved_contexts,
+        )
 
     return (validated_response.answer,
             validated_response.retrieved_contexts,
