@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 QUESTIONS_PATH = PROJECT_ROOT / "evaluation" / "questions.json"
 RESULTS_DIR = PROJECT_ROOT / "evaluation" / "results"
-RESULTS_PATH = RESULTS_DIR / "v0.1_baseline_ragas_results.csv"
+RESULTS_PATH = RESULTS_DIR / "v0.2_pydantic_ai_results.csv"
 
 
 class EvaluationCase(BaseModel):

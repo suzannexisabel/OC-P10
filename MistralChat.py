@@ -2,8 +2,11 @@
 import streamlit as st
 import os
 import logging
-from mistralai.client import MistralClient
-from mistralai.models.chat_completion import ChatMessage
+
+from pydantic_ai import Agent
+from pydantic_ai.models.mistral import MistralModel
+from pydantic_ai.providers.mistral import MistralProvider
+
 from dotenv import load_dotenv
 
 from pydantic import ValidationError
@@ -34,11 +37,30 @@ if not api_key:
     st.stop()
 
 try:
-    client = MistralClient(api_key=api_key)
-    logging.info("Client Mistral initialisé.")
+    mistral_model = MistralModel(
+        model,
+        provider=MistralProvider(api_key=api_key),
+    )
+
+    agent = Agent(
+        mistral_model,
+        output_type=str,
+        model_settings={
+            "temperature": 0.1,
+        },
+    )
+
+    logging.info("Agent Pydantic AI initialisé avec Mistral.")
+
 except Exception as e:
-    st.error(f"Erreur lors de l'initialisation du client Mistral : {e}")
-    logging.exception("Erreur initialisation client Mistral")
+    st.error(
+        "Erreur lors de l'initialisation de "
+        f"l'agent Pydantic AI : {e}"
+    )
+    logging.exception(
+        "Erreur lors de l'initialisation "
+        "de l'agent Pydantic AI"
+    )
     st.stop()
 
 # --- Chargement du Vector Store (mis en cache) ---
@@ -89,34 +111,45 @@ if "messages" not in st.session_state:
 
 # --- Fonctions ---
 
-def generer_reponse(prompt_messages: list[ChatMessage]) -> str:
+def generer_reponse(prompt: str) -> str:
     """
-    Envoie le prompt (qui inclut maintenant le contexte) à l'API Mistral.
+    Envoie le prompt enrichi à l'agent Pydantic AI.
     """
-    if not prompt_messages:
-         logging.warning("Tentative de génération de réponse avec un prompt vide.")
-         return "Je ne peux pas traiter une demande vide."
-    try:
-        logging.info(f"Appel à l'API Mistral modèle '{model}' avec {len(prompt_messages)} message(s).")
-        # Log le contenu du prompt (peut être long) - commenter si trop verbeux
-        # logging.debug(f"Prompt envoyé à l'API: {prompt_messages}")
-
-        response = client.chat(
-            model=model,
-            messages=prompt_messages,
-            temperature=0.1, # Température basse pour des réponses factuelles basées sur le contexte
-            # top_p=0.9,
+    if not prompt or not prompt.strip():
+        logging.warning(
+            "Tentative de génération avec un prompt vide."
         )
-        if response.choices and len(response.choices) > 0:
-            logging.info("Réponse reçue de l'API Mistral.")
-            return response.choices[0].message.content
-        else:
-            logging.warning("L'API n'a pas retourné de choix valide.")
-            return "Désolé, je n'ai pas pu générer de réponse valide pour le moment."
+        return "Je ne peux pas traiter une demande vide."
+
+    try:
+        logging.info(
+            "Appel de l'agent Pydantic AI avec "
+            f"le modèle '{model}'."
+        )
+
+        result = agent.run_sync(prompt)
+
+        logging.info(
+            "Réponse reçue de l'agent Pydantic AI."
+        )
+
+        return result.output
+
     except Exception as e:
-        st.error(f"Erreur lors de l'appel à l'API Mistral: {e}")
-        logging.exception("Erreur API Mistral pendant client.chat")
-        return "Je suis désolé, une erreur technique m'empêche de répondre. Veuillez réessayer plus tard."
+        st.error(
+            "Erreur lors de l'appel à "
+            f"l'agent Pydantic AI : {e}"
+        )
+        logging.exception(
+            "Erreur pendant l'exécution "
+            "de l'agent Pydantic AI"
+        )
+
+        return (
+            "Je suis désolé, une erreur technique "
+            "m'empêche de répondre. "
+            "Veuillez réessayer plus tard."
+        )
 
 def executer_rag(
     question: str,
@@ -213,16 +246,9 @@ def executer_rag(
         question=question,
     )
 
-    messages_for_api = [
-        ChatMessage(
-            role="user",
-            content=final_prompt_for_llm,
-        )
-    ]
-
     # Utiliser la fonction Mistral existante
     response_content = generer_reponse(
-        messages_for_api
+        final_prompt_for_llm
     )
 
     # Valider la reponse et les contextes
@@ -250,11 +276,6 @@ if prompt := st.chat_input(f"Posez votre question sur la {NAME}..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     with st.chat_message("user"):
         st.write(prompt)
-
-    
-
-
-
 
     # 2. Afficher indicateur + Générer la réponse de l'assistant via LLM
     with st.chat_message("assistant"):
