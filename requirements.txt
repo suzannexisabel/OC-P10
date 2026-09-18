@@ -1,5 +1,6 @@
 streamlit==1.44.1
-mistralai==0.4.2
+mistralai==2.10.1
+pydantic-ai-slim[mistral]==2.45.0
 langchain==0.3.23
 faiss-cpu==1.10.0
 PyPDF2==3.0.1
