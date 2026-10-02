@@ -3,10 +3,12 @@ import streamlit as st
 import os
 import logging
 import logfire
+import json
 
 from pydantic_ai import Agent
 from pydantic_ai.models.mistral import MistralModel
 from pydantic_ai.providers.mistral import MistralProvider
+from pydantic_ai.messages import ToolReturnPart
 
 from dotenv import load_dotenv
 
@@ -196,7 +198,10 @@ if "messages" not in st.session_state:
 
 # --- Fonctions ---
 
-def generer_reponse(prompt: str) -> str:
+def generer_reponse(
+        prompt: str,
+        retrieved_contexts: list[str],
+    ) -> str:
     """
     Envoie le prompt enrichi à l'agent Pydantic AI.
     """
@@ -213,6 +218,22 @@ def generer_reponse(prompt: str) -> str:
         )
 
         result = agent.run_sync(prompt)
+
+        # Récupérer les résultats SQL du même appel à l'agent.
+        for message in result.new_messages():
+            for part in message.parts:
+                if (
+                    isinstance(part, ToolReturnPart)
+                    and part.tool_name == "nba_season_sql"
+                ):
+                    retrieved_contexts.append(
+                        "Source : tool SQL NBA, saison 2024-25.\n"
+                        + json.dumps(
+                            part.content,
+                            ensure_ascii=False,
+                            default=str,
+                        )
+                    )
 
         logging.info(
             "Réponse reçue de l'agent Pydantic AI."
@@ -354,7 +375,8 @@ def executer_rag(
 
     # Utiliser la fonction Mistral existante
     response_content = generer_reponse(
-        final_prompt_for_llm
+        final_prompt_for_llm,
+        retrieved_contexts,
     )
 
     # Valider la reponse et les contextes
