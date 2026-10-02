@@ -46,7 +46,9 @@ class MistralSQLGenerator:
 # Les libellés définissent le sens des colonnes. Ils sont transmis au LLM.
 SCHEMA = """SQLite ; tables :
 players(player_id PK, player_name UNIQUE, player_url, team_code, team_name, team_url, age)
+
 reports(report_id PK, season, season_type, source_file, imported_at, description)
+
 stats(stat_id PK, player_id FK -> players, report_id FK -> reports,
  games_played, wins, losses, minutes_per_game, points_total,
  field_goals_made, field_goals_attempted, field_goal_pct,
@@ -59,31 +61,175 @@ stats(stat_id PK, player_id FK -> players, report_id FK -> reports,
  assist_ratio, offensive_rebound_pct, defensive_rebound_pct,
  total_rebound_pct, turnover_ratio, effective_field_goal_pct,
  true_shooting_pct, usage_pct, pace, player_impact_estimate, possessions)
+
 matches(match_id PK, match_date, season, home_team, away_team, home_score, away_score) : VIDE.
+
 Il n'y a qu'un rapport : saison 2024-25, saison régulière.
-Chaque ligne de stats représente un joueur sur toute la saison, pas un match.
-Les nombres de points, de tirs, de rebonds et de passes sont des TOTAUX ;
-minutes_per_game et les pourcentages sont des MOYENNES/POURCENTAGES.
-Les pourcentages sont enregistrés sur 100 (37.5 veut dire 37,5 %).
-La colonne three_points_made vient d'un en-tête Excel corrompu « 15:00 » :
-son identification comme 3PM est probable mais les 3PM/3PA/3P% de la source
-ne concordent pas toujours. Utiliser le three_point_pct fourni pour le classement.
+Chaque ligne de stats représente les statistiques d'un joueur
+sur la saison, pas les statistiques d'un match individuel.
+La table matches est vide.
+
+Unités :
+- Les points, tirs, rebonds, passes décisives, balles perdues,
+  interceptions, contres et fautes sont des totaux de saison.
+- minutes_per_game est une moyenne par match.
+- Les pourcentages sont enregistrés sur 100 :
+  37.5 signifie 37,5 %. Ne pas multiplier ces valeurs par 100.
+- Les ratios et les statistiques par 100 possessions
+  ne sont pas des totaux de saison.
+
+Dictionnaire des colonnes :
+
+Identité et liens :
+- player_id : identifiant interne du joueur dans la base.
+- player_name : nom du joueur.
+- player_url : URL de la page du joueur enregistrée dans la base.
+  À récupérer pour une demande de lien vers ce joueur
+  ou vers ses statistiques.
+- team_code : code de l'équipe.
+- team_name : nom de l'équipe.
+- team_url : URL de la page de l'équipe enregistrée dans la base.
+- age : âge du joueur enregistré dans la source.
+
+Rapport :
+- report_id : identifiant du rapport de statistiques.
+- season : saison concernée.
+- season_type : type de saison.
+- source_file : nom du fichier source.
+- imported_at : date d'importation dans la base,
+  pas la date d'un match ni une garantie d'actualisation des données.
+- description : description du rapport.
+
+Participation :
+- stat_id : identifiant de la ligne de statistiques.
+- games_played : nombre de matchs joués.
+- wins : nombre de victoires lors des matchs joués.
+- losses : nombre de défaites lors des matchs joués.
+- minutes_per_game : minutes moyennes jouées par match.
+
+Points et tirs :
+- points_total : total de points marqués sur la saison.
+- field_goals_made : total de tirs de champ réussis,
+  comprenant les tirs à 2 et à 3 points.
+- field_goals_attempted : total de tirs de champ tentés.
+- field_goal_pct : pourcentage de réussite aux tirs de champ.
+- three_points_made : total présumé de tirs à 3 points réussis.
+  Cette colonne provient d'un en-tête source corrompu.
+  Son identification est probable et certaines valeurs
+  ne concordent pas avec les tentatives et le pourcentage.
+  Ne pas l'utiliser pour recalculer three_point_pct.
+- three_points_attempted : total de tirs à 3 points tentés.
+- three_point_pct : pourcentage de réussite à 3 points.
+  Utiliser directement cette colonne pour un classement
+  de réussite à 3 points.
+- free_throws_made : total de lancers francs réussis.
+- free_throws_attempted : total de lancers francs tentés.
+- free_throw_pct : pourcentage de réussite aux lancers francs.
+
+Statistiques de jeu :
+- offensive_rebounds : total de rebonds offensifs.
+- defensive_rebounds : total de rebonds défensifs.
+- total_rebounds : total de rebonds offensifs et défensifs réunis.
+- assists : total de passes décisives.
+- turnovers : total de balles perdues.
+- steals : total d'interceptions.
+- blocks : total de contres.
+- personal_fouls : total de fautes personnelles.
+- fantasy_points : points fantasy selon le barème de la source.
+  Ne pas les confondre avec les points réellement marqués.
+- double_doubles : nombre de matchs avec au moins 10
+  dans deux catégories parmi les points, rebonds,
+  passes décisives, interceptions et contres.
+- triple_doubles : nombre de matchs avec au moins 10
+  dans trois de ces catégories.
+- plus_minus : écart de score en faveur ou en défaveur
+  de l'équipe lorsque le joueur est sur le terrain.
+  Ne pas le confondre avec net_rating.
+
+Statistiques avancées :
+- offensive_rating : points marqués par l'équipe
+  par 100 possessions lorsque le joueur est sur le terrain.
+- defensive_rating : points encaissés par l'équipe
+  par 100 possessions lorsque le joueur est sur le terrain.
+  Une valeur plus basse signifie moins de points encaissés.
+- net_rating : différence entre offensive_rating
+  et defensive_rating.
+- assist_pct : pourcentage des paniers de ses coéquipiers
+  auxquels le joueur contribue par une passe décisive
+  lorsqu'il est sur le terrain.
+- assist_turnover_ratio : ratio passes décisives
+  sur balles perdues. Ce n'est pas un pourcentage.
+- assist_ratio : passes décisives par 100 possessions.
+- offensive_rebound_pct : pourcentage de rebonds offensifs
+  disponibles captés lorsque le joueur est sur le terrain.
+- defensive_rebound_pct : pourcentage de rebonds défensifs
+  disponibles captés lorsque le joueur est sur le terrain.
+- total_rebound_pct : pourcentage de rebonds disponibles
+  captés lorsque le joueur est sur le terrain.
+  Ce n'est pas un nombre de rebonds ni une moyenne par match.
+- turnover_ratio : balles perdues par 100 possessions.
+- effective_field_goal_pct : pourcentage de réussite aux tirs
+  ajusté pour tenir compte de la valeur supérieure des tirs à 3 points.
+- true_shooting_pct : mesure de l'efficacité au scoring
+  tenant compte des tirs à 2 points, à 3 points et des lancers francs.
+- usage_pct : pourcentage d'utilisation offensive du joueur.
+  Ne pas le confondre avec son temps de jeu.
+- pace : rythme de jeu exprimé en possessions par 48 minutes.
+- player_impact_estimate : indicateur global de l'impact du joueur.
+- possessions : nombre total de possessions jouées.
+
+Correspondances avec les questions :
+- « le plus de matchs » -> games_played.
+- « le plus de points sur la saison » -> points_total.
+- « moyenne de points par match » ->
+  1.0 * points_total / NULLIF(games_played, 0).
+- « le plus de rebonds » -> total_rebounds.
+- « meilleur pourcentage de rebonds » -> total_rebound_pct.
+- « pourcentage de rebonds offensifs » -> offensive_rebound_pct.
+- « pourcentage de rebonds défensifs » -> defensive_rebound_pct.
+- « meilleur pourcentage à 3 points » -> three_point_pct.
+- « meilleur ratio passes / pertes de balle » -> assist_turnover_ratio.
+- « lien vers les statistiques du joueur » -> player_url.
+- « lien vers l'équipe » -> team_url.
+
+Règles d'interprétation :
+- Respecter la statistique et le nombre de joueurs demandés.
+- Ne pas ajouter de statistiques ou de classements non demandés.
+- Ne jamais remplacer un pourcentage par une quantité.
+- Utiliser directement les pourcentages enregistrés.
+- Pour calculer une moyenne par match à partir d'un total,
+  diviser par NULLIF(games_played, 0).
+- Ne pas ajouter de seuil de matchs ou de tentatives
+  si l'utilisateur n'en demande pas.
+- Pour une demande de lien, sélectionner le nom et l'URL
+  enregistrée correspondante. Ne jamais fabriquer une URL.
+- Une URL enregistrée est une information accessible via SQL ;
+  sa récupération ne nécessite pas de recherche sur Internet.
 """
 
-EXAMPLES = """Question: Quels joueurs ont marqué le plus de points sur la saison ?
-SQL: SELECT p.player_name, s.points_total FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' ORDER BY s.points_total DESC LIMIT 5
+EXAMPLES = """Question: Quels sont les 5 joueurs ayant la meilleure moyenne de points par match, avec au moins 20 matchs joués ?
+SQL: SELECT p.player_name, s.points_total AS points_per_game, s.games_played FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' AND s.games_played >= 20 AND s.points_total IS NOT NULL ORDER BY s.points_total DESC, p.player_name ASC LIMIT 5
 
-Question: Qui a le meilleur pourcentage de réussite à 3 points sur la saison ?
-SQL: SELECT p.player_name, s.three_point_pct, s.three_points_attempted FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' AND s.three_points_attempted > 0 ORDER BY s.three_point_pct DESC LIMIT 5
+Question: Quels sont les 3 joueurs ayant joué le plus de matchs ?
+SQL: SELECT p.player_name, s.games_played FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' AND s.games_played IS NOT NULL ORDER BY s.games_played DESC, p.player_name ASC LIMIT 3
 
-Question: Quels joueurs ont la meilleure moyenne de points par match, avec au moins 20 matchs ?
-SQL: SELECT p.player_name, ROUND(1.0 * s.points_total / s.games_played, 2) AS points_per_game, s.games_played FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' AND s.games_played >= 20 ORDER BY points_per_game DESC LIMIT 5
+Question: Quels sont les 5 joueurs ayant le meilleur pourcentage à 3 points avec au moins 3 tentatives par match ?
+SQL: SELECT p.player_name, s.three_point_pct, s.three_points_attempted AS three_point_attempts_per_game FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' AND s.three_points_attempted >= 3 AND s.three_point_pct IS NOT NULL ORDER BY s.three_point_pct DESC, p.player_name ASC LIMIT 5
 
-Question: Quels sont les meilleurs pourcentages à 3 points avec au moins 100 tentatives ?
-SQL: SELECT p.player_name, s.three_point_pct, s.three_points_attempted FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' AND s.three_points_attempted >= 100 ORDER BY s.three_point_pct DESC LIMIT 5
+Question: Quels sont les 4 joueurs ayant le meilleur pourcentage de rebonds ?
+SQL: SELECT p.player_name, s.total_rebound_pct FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' AND s.total_rebound_pct IS NOT NULL ORDER BY s.total_rebound_pct DESC, p.player_name ASC LIMIT 4
 
-Question: Quel est le total de points des joueurs de chaque équipe dans ce fichier ?
-SQL: SELECT p.team_code, SUM(s.points_total) AS total_points_des_joueurs FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' GROUP BY p.team_code ORDER BY total_points_des_joueurs DESC LIMIT 10
+Question: Quels sont les 5 joueurs ayant le meilleur ratio de passes décisives sur balles perdues ?
+SQL: SELECT p.player_name, s.assist_turnover_ratio FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' AND s.assist_turnover_ratio IS NOT NULL ORDER BY s.assist_turnover_ratio DESC, p.player_name ASC LIMIT 5
+
+Question: Quels sont les 5 joueurs ayant le meilleur defensive rating avec au moins 20 matchs joués ?
+SQL: SELECT p.player_name, s.defensive_rating, s.games_played FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' AND s.games_played >= 20 AND s.defensive_rating IS NOT NULL ORDER BY s.defensive_rating ASC, p.player_name ASC LIMIT 5
+
+Question: Compare les moyennes de points, les minutes par match et le pourcentage de réussite à 3 points de Stephen Curry et de Nikola Jokić.
+SQL: SELECT p.player_name, s.points_total AS points_per_game, s.minutes_per_game, s.three_point_pct FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' AND p.player_name IN ('Stephen Curry', 'Nikola Jokić') ORDER BY p.player_name ASC LIMIT 2
+
+Question: Donne-moi le lien vers les statistiques du joueur ayant la meilleure moyenne de points par match.
+SQL: SELECT p.player_name, s.points_total AS points_per_game, p.player_url FROM stats AS s JOIN players AS p ON p.player_id = s.player_id JOIN reports AS r ON r.report_id = s.report_id WHERE r.season = '2024-25' AND s.points_total IS NOT NULL ORDER BY s.points_total DESC, p.player_name ASC LIMIT 1
 """
 
 PROMPT = """Tu génères UNE requête SQLite SELECT pour répondre à la question.
@@ -95,6 +241,20 @@ question ne l'indique pas ; expose alors three_points_attempted dans les résult
 N'utilise pas three_points_made pour recalculer three_point_pct.
 Ne prétends pas que la somme des points des joueurs d'une équipe représente
 les points réellement marqués par cette équipe (transferts et périodes inconnus).
+
+Identifie précisément la statistique demandée à partir du dictionnaire.
+Sélectionne uniquement les informations nécessaires à la question.
+
+Respecte le nombre de joueurs demandé : top 4 signifie LIMIT 4.
+Si aucun nombre n'est précisé pour un classement, utilise LIMIT 5.
+
+Pour un classement, trie d'abord par la statistique demandée,
+puis par p.player_name ASC pour départager les égalités de manière stable.
+Exclus les valeurs NULL de la statistique classée.
+
+Ne rajoute pas de statistiques ou de classements non demandés.
+Pour un pourcentage stocké, utilise directement la colonne correspondante.
+
 {schema}
 Exemples :
 {examples}

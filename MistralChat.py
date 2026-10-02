@@ -13,6 +13,10 @@ from dotenv import load_dotenv
 from pydantic import ValidationError
 from utils.schemas import RAGRequest, RAGResponse
 
+from database.sql_tool import (MistralSQLGenerator, 
+                               build_sql_tool, 
+                               UNAVAILABLE)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(module)s - %(message)s",
@@ -58,9 +62,44 @@ try:
     agent = Agent(
         mistral_model,
         output_type=str,
-        model_settings={
-            "temperature": 0.1,
-        },
+        model_settings={"temperature": 0.1},
+        instructions="""
+        Tu es NBA Analyst AI. Réponds précisément à la demande.
+
+        Pour les statistiques chiffrées de la saison 2024-25 et les liens
+        enregistrés dans la base, appelle nba_season_sql avant de répondre.
+        Transmets une question fidèle à la demande, sans ajouter de métriques.
+
+        Si le tool retourne status="ok", utilise les lignes retournées.
+        Ne les qualifie pas de simulations, d'estimations ou de données
+        incomplètes sans élément explicite qui le démontre.
+        Respecte les noms des colonnes et leurs unités.
+        N'ajoute aucun classement non demandé.
+        Si plusieurs joueurs ont la même valeur, tu peux signaler leur égalité.
+
+        Pour les opinions et débats, utilise uniquement les passages
+        documentaires qui concernent réellement le joueur ou le sujet demandé.
+        Un passage récupéré ne constitue pas automatiquement une preuve pertinente.
+        N'attribue pas à un joueur des propos concernant un autre joueur.
+        Si les passages ne permettent pas de répondre, dis-le brièvement.
+
+        Pour une question d'opinion, ne commente pas l'absence de statistiques
+        et ne propose pas spontanément une recherche chiffrée.
+
+        Pour une question mixte, distingue les statistiques SQL des opinions.
+
+        Mentionne une limite uniquement lorsqu'elle empêche de répondre
+        à une partie de la demande. Ne termine pas chaque réponse
+        par une remarque générale sur les limites des données.
+
+        Si l'utilisateur demande un lien, récupère player_url ou team_url
+        avec nba_season_sql et présente l'URL retournée sous forme de lien
+        Markdown. Si aucune URL n'est renseignée, indique-le brièvement.
+
+        N'affiche des liens que si l'utilisateur en demande explicitement.
+        Pour un classement sans demande de lien, présente uniquement
+        le tableau avec les joueurs et les statistiques demandées.
+        """
     )
 
     logging.info("Agent Pydantic AI initialisé avec Mistral.")
@@ -75,6 +114,20 @@ except Exception as e:
         "de l'agent Pydantic AI"
     )
     st.stop()
+
+def get_sql_tool():
+    generor = MistralSQLGenerator(model=MODEL_NAME)
+    return build_sql_tool(generor, "data/nba.sqlite")
+
+@agent.tool_plain
+def nba_season_sql(question: str) -> dict:
+    """Interroge les statistiques NBA de la saison 2024-25.
+    
+    À utiliser pour les claseements totaux, moyennes et pourcentages.
+    La base ne continet pas de statistiques par match.
+    """
+    with logfire.span("Exécution du Tool SQL NBA", question=question):
+        return get_sql_tool().invoke({"question": question})
 
 # --- Chargement du Vector Store (mis en cache) ---
 @st.cache_resource # Garde le manager chargé en mémoire pour la session
@@ -103,18 +156,37 @@ def get_vector_store_manager():
 vector_store_manager = get_vector_store_manager()
 
 # --- Prompt Système pour RAG --- 
-# Adaptez ce prompt selon vos besoins
-SYSTEM_PROMPT = f"""Tu es 'NBA Analyst AI', un assistant expert sur la ligue de basketball NBA.
-Ta mission est de répondre aux questions des fans en animant le débat.
+SYSTEM_PROMPT =  """Tu es NBA Analyst AI, un assistant sur la NBA.
 
+Si la question porte uniquement sur des statistiques chiffrées,
+appelle nba_season_sql et réponds uniquement à partir des lignes retournées.
+Ignore les contextes documentaires pour cette réponse.
+Ne commente pas les onglets Excel, les valeurs manquantes ou la provenance
+des lignes, sauf si la question le demande explicitement.
+
+Pour les questions sur les opinions et débats, utilise les contextes
+documentaires ci-dessous. Pour une question mixte, distingue les résultats
+SQL des commentaires.
+
+Si le Tool indique que les données sont indisponibles, explique la limite
+sans remplacer les données demandées par des statistiques de saison.
+
+Rédige toujours une réponse en phrases complètes.
+Pour un classement de plusieurs joueurs, présente les résultats dans un
+tableau avec les colonnes « Rang », « Joueur » et « Valeur ».
+Indique la statistique mesurée, son unité et la saison.
+Pour un seul joueur, réponds en une phrase complète avec la valeur et son unité.
+Ne recopie pas simplement une liste de valeurs brutes.
+
+CONTEXTES DOCUMENTAIRES :
 ---
-{{context_str}}
+{context_str}
 ---
 
-QUESTION DU FAN:
-{{question}}
+QUESTION DU FAN :
+{question}
 
-RÉPONSE DE L'ANALYSTE NBA:"""
+RÉPONSE :"""
 
 
 # --- Initialisation de l'historique de conversation ---
@@ -184,6 +256,14 @@ def executer_rag(
         )
 
     question = validated_request.question
+
+    if UNAVAILABLE.search(question):
+        return (
+            "Cette demande nécessite des statistiques match par match "
+            "ou une distinction domicile/extérieur. Ma base contient "
+            "uniquement des statistiques agrégées sur la saison 2024-25.",
+            [],
+        )
 
     # Vérifier si le Vector Store est disponible
     if vector_store_manager is None:
