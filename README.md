@@ -18,6 +18,46 @@ Le projet comprend également un jeu de questions annotées, des scripts d’év
 - [Modules principaux](#modules-principaux)
 - [Limites connues](#limites-connues)
 
+## Architecture
+
+L’assistant combine une recherche documentaire FAISS et un outil SQL accessible à l’agent Pydantic AI.
+
+### Préparation des données
+
+```mermaid
+flowchart TD
+    Documents["Documents dans inputs/"] --> Indexation["indexer.py : extraction et découpage"]
+    Indexation --> Embeddings["Embeddings Mistral"]
+    Embeddings --> FAISS["Index FAISS et passages sauvegardés"]
+
+    Excel["regular NBA.xlsx"] --> Import["load_excel_to_db.py : validation et import"]
+    Import --> SQLite["SQLite : data/nba.sqlite"]
+```
+
+L’indexation traite les documents présents dans `inputs/`, y compris le fichier Excel. La base SQLite est alimentée séparément pour permettre les filtres, classements et calculs sur les statistiques.
+
+### Traitement d’une question
+
+```mermaid
+flowchart TD
+    Question["Question dans Streamlit"] --> Validation["Validation Pydantic"]
+    Validation --> Disponibilite{"Demande détectée comme indisponible ?"}
+    Disponibilite -->|Oui| Refus["Réponse signalant les données indisponibles"]
+    Disponibilite -->|Non| Recherche["Recherche FAISS"]
+    Recherche --> Prompt["Construction du prompt avec les passages"]
+    Prompt --> Agent["Agent Pydantic AI avec Mistral"]
+    Agent -->|Appel selon la demande| SQL["Outil SQL : génération et contrôle de la requête"]
+    SQL --> SQLite["SQLite en lecture seule"]
+    SQLite --> SQL
+    SQL -->|Résultats| Agent
+    Agent --> Sortie["Validation Pydantic de la réponse et des contextes"]
+    Sortie --> Affichage["Affichage dans Streamlit"]
+```
+
+La recherche FAISS précède l’appel à l’agent, même pour les questions statistiques ordinaires. Les instructions demandent à l’agent d’utiliser les passages documentaires pour les discussions et d’appeler SQL pour les statistiques. L’appel à l’outil repose sur la décision de l’agent.
+
+L’outil SQL exécute les requêtes dans une base ouverte en lecture seule. Il limite les résultats transmis à 20 lignes et interrompt les requêtes SQLite dépassant environ trois secondes. Ces contrôles ne garantissent pas que la requête générée répond correctement à la question.
+
 ## Fonctionnalités
 
 - 🔍 **Recherche documentaire avec FAISS** : récupération de passages issus des documents Reddit pour répondre aux questions sur les opinions et les débats autour de la NBA.
